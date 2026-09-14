@@ -26,6 +26,10 @@ jobs:
     env:
       NDK_VERSION: 27.3.13750724
       KEYSTORE_BASE64: ${{ secrets.WORMHOLE_KEYSTORE_BASE64 }}
+      # Job-wide: once WORMHOLE_KEYSTORE_PATH is set, every Gradle invocation needs the full signing config.
+      WORMHOLE_KEYSTORE_PASSWORD: ${{ secrets.WORMHOLE_KEYSTORE_PASSWORD }}
+      WORMHOLE_KEY_ALIAS: ${{ secrets.WORMHOLE_KEY_ALIAS }}
+      WORMHOLE_KEY_PASSWORD: ${{ secrets.WORMHOLE_KEY_PASSWORD }}
     steps:
       - name: Check out (full history and tags for versioning)
         uses: actions/checkout@v7
@@ -64,10 +68,17 @@ jobs:
           fi
 
       - name: Require signing secrets for published builds
-        if: github.event_name == 'push' && env.KEYSTORE_BASE64 == ''
+        if: github.event_name == 'push'
         run: |
-          echo "::error::Repository secret WORMHOLE_KEYSTORE_BASE64 is not set; refusing to publish an unsigned build."
-          exit 1
+          missing=""
+          [ -n "$KEYSTORE_BASE64" ] || missing="$missing WORMHOLE_KEYSTORE_BASE64"
+          [ -n "$WORMHOLE_KEYSTORE_PASSWORD" ] || missing="$missing WORMHOLE_KEYSTORE_PASSWORD"
+          [ -n "$WORMHOLE_KEY_ALIAS" ] || missing="$missing WORMHOLE_KEY_ALIAS"
+          [ -n "$WORMHOLE_KEY_PASSWORD" ] || missing="$missing WORMHOLE_KEY_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing; refusing to publish an unsigned build."
+            exit 1
+          fi
 
       - name: Decode release keystore
         if: env.KEYSTORE_BASE64 != ''
@@ -79,10 +90,6 @@ jobs:
         run: ./gradlew --no-daemon :app:testDebugUnitTest
 
       - name: Build APK
-        env:
-          WORMHOLE_KEYSTORE_PASSWORD: ${{ secrets.WORMHOLE_KEYSTORE_PASSWORD }}
-          WORMHOLE_KEY_ALIAS: ${{ secrets.WORMHOLE_KEY_ALIAS }}
-          WORMHOLE_KEY_PASSWORD: ${{ secrets.WORMHOLE_KEY_PASSWORD }}
         run: |
           mkdir -p dist
           if [ -n "${WORMHOLE_KEYSTORE_PATH:-}" ]; then

@@ -8,7 +8,7 @@ plugins {
 val wormholeVersionName = providers.environmentVariable("WORMHOLE_VERSION_NAME").orElse("0.1.0-dev").get()
 val wormholeVersionCode = providers.environmentVariable("WORMHOLE_VERSION_CODE").orElse("1").get().toInt()
 // Release signing: CI decodes the keystore from repository secrets. Without it, release APKs are unsigned.
-val releaseKeystorePath = providers.environmentVariable("WORMHOLE_KEYSTORE_PATH").orNull
+val releaseKeystorePath = providers.environmentVariable("WORMHOLE_KEYSTORE_PATH").orNull?.takeIf { it.isNotEmpty() }
 
 android {
     namespace = "io.github.pgodlews.wormhole"
@@ -20,11 +20,14 @@ android {
     }
     signingConfigs {
         if (releaseKeystorePath != null) {
+            fun signingEnv(name: String): String =
+                providers.environmentVariable(name).orNull?.takeIf { it.isNotEmpty() }
+                    ?: throw GradleException("WORMHOLE_KEYSTORE_PATH is set but $name is missing; set all release signing variables")
             create("release") {
                 storeFile = file(releaseKeystorePath)
-                storePassword = providers.environmentVariable("WORMHOLE_KEYSTORE_PASSWORD").get()
-                keyAlias = providers.environmentVariable("WORMHOLE_KEY_ALIAS").get()
-                keyPassword = providers.environmentVariable("WORMHOLE_KEY_PASSWORD").get()
+                storePassword = signingEnv("WORMHOLE_KEYSTORE_PASSWORD")
+                keyAlias = signingEnv("WORMHOLE_KEY_ALIAS")
+                keyPassword = signingEnv("WORMHOLE_KEY_PASSWORD")
             }
         }
     }
