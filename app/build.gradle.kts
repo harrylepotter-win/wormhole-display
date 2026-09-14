@@ -4,6 +4,12 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// CI sets these from scripts/version.sh; local builds use the dev defaults.
+val wormholeVersionName = providers.environmentVariable("WORMHOLE_VERSION_NAME").orElse("0.1.0-dev").get()
+val wormholeVersionCode = providers.environmentVariable("WORMHOLE_VERSION_CODE").orElse("1").get().toInt()
+// Release signing: CI decodes the keystore from repository secrets. Without it, release APKs are unsigned.
+val releaseKeystorePath = providers.environmentVariable("WORMHOLE_KEYSTORE_PATH").orNull
+
 android {
     namespace = "io.github.pgodlews.wormhole"
     compileSdk = 35
@@ -12,16 +18,36 @@ android {
     if (bundledNdk.isDirectory) {
         ndkPath = bundledNdk.absolutePath
     }
+    signingConfigs {
+        if (releaseKeystorePath != null) {
+            create("release") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = providers.environmentVariable("WORMHOLE_KEYSTORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("WORMHOLE_KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("WORMHOLE_KEY_PASSWORD").get()
+            }
+        }
+    }
     defaultConfig {
         applicationId = "io.github.pgodlews.wormhole"
         minSdk = 28
         targetSdk = 29
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = wormholeVersionCode
+        versionName = wormholeVersionName
         ndk { abiFilters += "arm64-v8a" }
         externalNativeBuild { cmake { targets("wormhole") } }
     }
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.findByName("release")
+        }
+    }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt") } }
+    lint {
+        // targetSdk 29 is deliberate (Portal runs API 28–29; APKs are sideloaded, not published on Play).
+        // Keep the Play-policy check visible as a warning instead of failing release builds.
+        warning += "ExpiredTargetSdkVersion"
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

@@ -173,6 +173,36 @@ the script runs `llvm-ranlib` manually. It also strips debug info from
 archive; check with `strings -a <archive> | grep /Users/` before committing
 rebuilt deps. Update `THIRD_PARTY_NOTICES.md` if versions change.
 
+## Releases (GitHub Actions)
+
+`.github/workflows/release.yml` runs on the public GitHub repo (Gitea keeps using
+`.gitea/workflows/`, which takes precedence there):
+
+- **Pull requests:** unit tests + debug APK, uploaded as a workflow artifact.
+- **Push to `main`:** signed release APK, republished as the rolling `latest` pre-release.
+- **Tag `vX.Y.Z`:** signed release APK published as a GitHub Release with
+  `wormhole-display.apk` and its `.sha256`.
+
+Versions come from `scripts/version.sh` (newest reachable `vX.Y.Z` tag): a tagged
+commit builds as `X.Y.Z` with versionCode `X*1000000 + Y*10000 + Z*100`; a `main`
+build N commits later is `X.Y.Z-N-g<sha>` with `+N` (capped at 99), so the next tag
+always upgrades it. Minor and patch must stay ≤ 99. Local builds default to
+`0.1.0-dev` / versionCode 1.
+
+Lint's `ExpiredTargetSdkVersion` (a Play Store policy check) is downgraded to a
+warning in `app/build.gradle.kts`; otherwise `lintVitalRelease` fails every release
+build. `targetSdk = 29` is intentional: Portal runs API 28–29, APKs are sideloaded,
+and raising it would bring newer background-start and foreground-service rules.
+
+Release signing reads `WORMHOLE_KEYSTORE_PATH`, `WORMHOLE_KEYSTORE_PASSWORD`,
+`WORMHOLE_KEY_ALIAS` and `WORMHOLE_KEY_PASSWORD`. CI fills them from repository
+secrets (`WORMHOLE_KEYSTORE_BASE64` plus the other three). Without a keystore,
+`assembleRelease` produces an unsigned APK, and pushes to `main`/tags fail rather
+than publish unsigned builds. Never commit keystores (`*.jks`/`*.keystore` are
+gitignored). Release-signed and debug-signed APKs can't replace each other on a
+device: uninstall first when switching (this resets the receiver identity and the
+"Display over other apps" grant).
+
 ## Hard limitations (don't promise otherwise)
 
 - Wi-Fi only, same LAN, no AWDL/p2p.

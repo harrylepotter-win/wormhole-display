@@ -66,7 +66,7 @@ Check the connection with `adb devices`; your Portal should be listed as `device
 
 ### 2. Install the app
 
-Download `wormhole-display.apk` from this repository's **Releases** page, then install it:
+Download `wormhole-display.apk` from the newest `vX.Y.Z` release on this repository's **Releases** page (the *latest* pre-release is an automatic build of the main branch), then install it:
 
 ```bash
 adb install -r wormhole-display.apk

@@ -10,3 +10,6 @@ local.properties
 .idea/
 *.iml
 .claude/
+# Signing keys: the release keystore lives only in CI secrets
+*.jks
+*.keystore
