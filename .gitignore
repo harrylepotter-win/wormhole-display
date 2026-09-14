@@ -1,0 +1,12 @@
+.tools/
+.build/
+dist/
+**/build/
+**/.gradle/
+**/.cxx/
+.DS_Store
+local.properties
+**/.kotlin/
+.idea/
+*.iml
+.claude/

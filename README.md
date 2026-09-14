@@ -1,0 +1,154 @@
+<div align="center">
+  <img src="docs/images/wormhole_icon.png" width="160" alt="Wormhole Display icon" />
+  <h1>Wormhole Display</h1>
+  <p><strong>Give your Meta Portal a second life as a wireless display and speaker for your Mac, iPhone and iPad.</strong></p>
+  <p>AirPlay-compatible screen mirroring &amp; extended display receiver.</p>
+</div>
+
+> *"A wormhole connects two distant points in spacetime. Wormhole Display bridges two ecosystems that were never meant to talk to each other..."*
+
+<p align="center">
+  <img src="docs/images/portal-plus-dashboard.png" width="800" alt="Wormhole Display dashboard running on a Portal+ (Gen 2)" /><br />
+  <em>Wormhole Display on a Portal+ (Gen 2)</em>
+</p>
+
+---
+
+## A second life for your Portal
+
+Meta Portal devices are no longer made or sold, but the hardware is still great: sharp screens, good speakers, and a TV model that plugs into any HDMI input. Wormhole Display turns a Portal into a screen your Mac, iPhone or iPad can use straight from **Control Center → Screen Mirroring**, as an extended display or a mirror, with sound. Nothing needs to be installed on the sender.
+
+It is an ordinary app that runs alongside Portal OS: **no root, no firmware changes, and no Meta services**. It only talks to Apple devices on your local Wi-Fi.
+
+- **Portal+ (Gen 2)**: a 14″ 2160×1440 extended display, with speakers, for your MacBook.
+- **Portal Go**: a battery-powered wireless display you can carry from room to room.
+- **Portal TV**: turns your TV into a Screen Mirroring target, navigated with the Portal TV remote.
+
+Wormhole Display is an independent community project and is not affiliated with Meta or Apple; see the legal section below.
+
+---
+
+## Features
+
+- **Shows up like any AirPlay display**: your Portal appears in Screen Mirroring as *Wormhole Plus*, *Wormhole Go* or *Wormhole TV*, or under a name you choose.
+- **Extended display or mirror**: macOS can use the Portal as a second screen, advertised at the panel's native resolution and refresh rate.
+- **Hardware video decoding**: H.264 on the Portal's hardware decoder, with experimental HEVC for senders that support it.
+- **Sound through the Portal**: audio plays on the Portal's speakers and can be muted from the dashboard.
+- **Opens when you connect**: the receiver stays available in the background and brings itself full screen when a stream starts. It can also start when the Portal boots.
+- **Back or Home to disconnect**: leaving the stream on the Portal ends the session on your Mac or iPhone too.
+- **Several Portals, one network**: each device has its own identity, so a Portal+ and a Portal TV can both be available at once.
+- **Remote-friendly on Portal TV**: full D-pad navigation with clear focus highlights.
+- **Dashboard and stats**: network details, recommended resolutions, recent connections, and an optional on-screen stats overlay (FPS, bitrate, codec).
+
+---
+
+## Compatibility
+
+Tested on:
+
+| Device | Display | Audio | Input |
+|---|---|---|---|
+| **Portal+ (Gen 2)** | 14″ 2160×1440 (3:2), 60 Hz | Stereo + subwoofer | Touch |
+| **Portal Go** | 10.1″ 1280×800 (16:10), 60 Hz | Stereo, battery powered | Touch |
+| **Portal TV** | Your TV over HDMI, 1080p (16:9), 60 Hz | TV or soundbar via HDMI | Remote (D-pad) |
+
+Other Portal models haven't been tested yet; reports are welcome. Other Android 9+ (API 28+) 64-bit ARM devices may also work, but are untested.
+
+---
+
+## Setting up your Portal
+
+### 1. Prepare your Portal
+
+Installing the app needs ADB (Android Debug Bridge) access to your Portal. Follow Meta's official guide, [Set up your device](https://developers.meta.com/horizon/documentation/android-apps/portal-setup/), to turn on ADB in the Portal's settings and connect it to your computer over USB-C. You'll also need Google's [Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools), which include `adb`.
+
+Check the connection with `adb devices`; your Portal should be listed as `device`.
+
+### 2. Install the app
+
+Download `wormhole-display.apk` from this repository's **Releases** page, then install it:
+
+```bash
+adb install -r wormhole-display.apk
+```
+
+### 3. First launch
+
+Open **Wormhole Display** from the Portal's apps list (on Portal TV, use the apps row with the remote). On the dashboard, tap **Allow** next to *Auto-open on connect* and turn on **Display over other apps**. Android only lets the receiver bring itself to the front for an incoming stream with that permission; without it, the stream still plays but you have to open the app yourself.
+
+Leave **Run in Background** on so your Portal stays available in Screen Mirroring after you close the app.
+
+---
+
+## Connecting
+
+### From a Mac
+
+1. Make sure your Mac and Portal are on the same Wi-Fi network.
+2. Open **Control Center → Screen Mirroring** and pick your Portal:
+   - **Wormhole Plus**: Portal+ (2160×1440, 3:2)
+   - **Wormhole Go**: Portal Go (1280×800, 16:10)
+   - **Wormhole TV**: Portal TV (1080p, 16:9)
+3. In **System Settings → Displays**, choose **Extended display** or **Mirror**. Turn on *Show all resolutions* to pick an exact native mode and avoid letterboxing. For crisp text on a Portal+, see the [Text Sharpness Guide](docs/macos-text-sharpness.md).
+
+### From an iPhone or iPad
+
+Open **Control Center → Screen Mirroring** and pick your Portal.
+
+### Ending a session
+
+Press **Back** or **Home** on the Portal, or stop Screen Mirroring on your Mac, iPhone or iPad.
+
+---
+
+## Building from source
+
+Requirements:
+
+- **JDK 17**
+- **Android SDK** (`ANDROID_HOME` pointing to your SDK directory)
+- **Android NDK r27d** (only needed if you change native C code; prebuilt static libraries for OpenSSL and libplist are committed under `app/src/main/cpp/deps/`)
+
+```bash
+# Build the APK (outputs to dist/wormhole-display.apk)
+./scripts/build.sh
+
+# Install and launch on a connected Portal
+adb install -r dist/wormhole-display.apk
+adb shell am start -n io.github.pgodlews.wormhole/.MainActivity
+```
+
+Protocol details, contributor notes and troubleshooting are in [AGENTS.md](AGENTS.md) and [docs/architecture.md](docs/architecture.md).
+
+---
+
+## How it works
+
+Wormhole Display is built on an Android port of [UxPlay](https://github.com/FDH2/UxPlay)'s C core (RTSP/RAOP, pairing, AES decryption, and an embedded mDNS responder). UxPlay's desktop GStreamer pipelines are replaced with Android's hardware `MediaCodec` for video and low-latency `AudioTrack` for audio.
+
+---
+
+## Security
+
+Wormhole Display accepts screen-mirroring connections from **any device on your local network, without a PIN or password**. Run it only on networks you trust.
+
+---
+
+## Legal & Trademark Disclaimers
+
+### Non-Affiliation Disclaimer
+**Wormhole Display** is an independent, community-developed open-source software project. It is not manufactured, endorsed, sponsored, affiliated with, or supported by **Apple Inc.** or **Meta Platforms, Inc.**
+
+### Nominative Fair Use
+- **Apple**, **AirPlay**, **macOS**, **iOS**, **Mac**, **MacBook**, **Retina**, and **Bonjour** are trademarks or registered trademarks of **Apple Inc.** in the United States and other countries.
+- **Meta**, **Portal**, **Portal+**, **Portal Go**, and **Portal TV** are trademarks or registered trademarks of **Meta Platforms, Inc.**
+
+All brand names, trademarks, product designations, and logos referenced in this repository are used strictly under **Nominative Fair Use** for technical identification, device interoperability, and accurate descriptive compatibility purposes.
+
+---
+
+## License
+
+Copyright © 2026 Piotr Godlewski
+
+Wormhole Display is licensed under the **GNU General Public License v3.0 (GPLv3)** — see [LICENSE](LICENSE). It links and builds upon UxPlay (GPLv3); bundled third-party components keep their own copyrights and licenses, listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
