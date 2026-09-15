@@ -7,9 +7,9 @@ hours.
 ## What this is
 
 An AirPlay-compatible **mirroring and extended display receiver** for Android,
-developed and tested on Meta Portal+ (Gen 2), Portal Go and Portal TV (Android
-9–10 / API 28–29, arm64, Wi-Fi only). A Mac, iPhone or iPad sees the device in
-its native Screen Mirroring picker and streams video and audio to it. The heavy
+developed and tested on Meta Portal+ (Gen 2), Portal Go, Portal TV and
+Portal Mini (Android 9–10 / API 28–29, arm64, Wi-Fi only). A Mac, iPhone or
+iPad sees the device in its native Screen Mirroring picker and streams video and
 lifting (RTSP, FairPlay, decryption, mDNS) is a vendored copy of UxPlay's C core
 at `app/src/main/cpp/uxplay/`; the app layer is Kotlin + MediaCodec/AudioTrack.
 
@@ -27,6 +27,7 @@ app/src/main/java/io/github/pgodlews/wormhole/
     WormholeService.kt                    foreground service: keeps the receiver discoverable, boot autostart
     WormholeServer.kt                     process-wide owner of the native server, renderers and UI state
     NativeBridge.kt                       JNI declarations
+    ScreenOrientation.kt                  portrait/landscape/auto orientation modes and model helpers
     VideoFrameQueue.kt, VideoRenderer.kt  compressed-frame queue → MediaCodec → Surface (H.264/HEVC)
     AudioRenderer.kt                      AAC-ELD decode → AudioTrack
     WormholeIdentity.kt                   persisted deviceid, service name, Wi-Fi multicast lock
@@ -148,6 +149,18 @@ adb logcat | grep -E "uxplay|Wormhole|AndroidRuntime|libc"
   2160×1440 despite bit 42, while an iPad and an iPhone negotiated HEVC. For a real
   codec A/B comparison keep resolution, content, frame-rate limit and network
   identical, and confirm `negotiated video codec` in logcat on both runs.
+- **Screen orientation & rotation**:
+  `ScreenOrientation` exposes `LANDSCAPE`, `PORTRAIT`, and `AUTO`. Hardware
+  accelerometer rotation (`AUTO`) is enabled only on hardware with rotatable
+  physical stands (Portal+ Gen 1 with swivel arm, Portal Mini 8" with dual-side feet)
+  via `WormholeIdentity.supportsAutoOrientation()`. Fixed-orientation devices
+  (Portal TV on HDMI, Portal Go with wedge stand, Portal+ Gen 2 with tilt-only stand)
+  have `AUTO` mode hidden/disabled and default to `LANDSCAPE`, though manual
+  `PORTRAIT` / `LANDSCAPE` overrides remain available on all devices. Because
+  macOS/iOS negotiate resolution at session setup and do not dynamically renegotiate
+  stream geometry mid-session, switching orientation disconnects any active mirroring
+  client (`disconnectClient("orientation_changed")`) and restarts the native receiver
+  to re-advertise transposed dimensions in RTSP `/info`.
 - **Package or class renames**: the JNI functions in `wormhole_jni.c`
   (`Java_io_github_pgodlews_wormhole_NativeBridge_*`) and the
   `FindClass("io/github/pgodlews/wormhole/NativeBridge$Listener")` string encode

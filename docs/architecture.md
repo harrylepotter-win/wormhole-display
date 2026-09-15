@@ -24,7 +24,8 @@ renderers with `MediaCodec` + `SurfaceView` for video and `AudioTrack` for audio
 - **App layer** (Kotlin) — `WormholeService` (foreground service, multicast and
   wake locks, boot autostart), `WormholeServer` (process-wide owner of the native
   server, renderers and UI state), `MainActivity` (Compose dashboard and video
-  surface).
+  surface), and `ScreenOrientation` (portrait/landscape/auto management with sensor
+  handling).
 
 Changes to the vendored core are listed in [uxplay-patches.md](uxplay-patches.md).
 
@@ -35,7 +36,10 @@ and the `features` bitmask built by the vendored `dnssd` from `lib/dnssdint.h`
 (currently `AppleTV3,2` / `220.68` / `0x5A7FFEE6,0x0`, UxPlay's defaults; bit 42
 is added when experimental HEVC is enabled). Display geometry is advertised from
 real panel metrics via `raop_set_plist` in `wormhole_jni.c` — senders stream at
-whatever size is advertised.
+whatever size is advertised. When screen orientation changes (either via manual toggle
+or physical device rotation on supported models such as Portal Mini),
+active mirroring clients are disconnected and the receiver restarts with transposed
+width/height values so connecting senders pick up the updated geometry in `/info`.
 
 ## Licensing
 

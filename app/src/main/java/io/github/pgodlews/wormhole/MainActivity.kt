@@ -1,9 +1,14 @@
 package io.github.pgodlews.wormhole
 
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
+import android.hardware.SensorManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.Settings
+import android.view.OrientationEventListener
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
@@ -32,6 +37,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -51,38 +57,71 @@ data class DisplayInfo(
     val recommendedResolutions: String
 )
 
-fun computeDisplayInfo(rawWidth: Int, rawHeight: Int, refreshRate: Int): DisplayInfo {
-    val w = maxOf(rawWidth, rawHeight)
-    val h = minOf(rawWidth, rawHeight)
+fun computeDisplayInfo(rawWidth: Int, rawHeight: Int, refreshRate: Int, isPortrait: Boolean = false): DisplayInfo {
+    val longSide = maxOf(rawWidth, rawHeight)
+    val shortSide = minOf(rawWidth, rawHeight)
+    val w = if (isPortrait) shortSide else longSide
+    val h = if (isPortrait) longSide else shortSide
     val fps = if (refreshRate > 0) refreshRate else 60
     val ratio = w.toDouble() / h.toDouble()
 
-    val (label, resolutions) = when {
-        // 16:10 (1.60) - e.g. 1280x800
-        kotlin.math.abs(ratio - 1.6) < 0.05 -> {
-            "16:10" to "$w × $h (Default) • 1440 × 900 • 1680 × 1050 • 1920 × 1200"
+    val (label, resolutions) = if (!isPortrait) {
+        when {
+            // 16:10 (1.60) - e.g. 1280x800
+            kotlin.math.abs(ratio - 1.6) < 0.05 -> {
+                "16:10" to "$w × $h (Default) • 1440 × 900 • 1680 × 1050 • 1920 × 1200"
+            }
+            // 3:2 (1.50) - e.g. 2160x1440
+            kotlin.math.abs(ratio - 1.5) < 0.05 -> {
+                "3:2" to "$w × $h (Default) • 1620 × 1080 • 1344 × 896 • 1080 × 720"
+            }
+            // 16:9 (1.777...) - e.g. 1920x1080
+            kotlin.math.abs(ratio - 16.0 / 9.0) < 0.05 -> {
+                "16:9" to if (w >= 3840) "$w × $h (Default) • 2560 × 1440 • 1920 × 1080 • 1280 × 720"
+                         else if (w >= 2560) "$w × $h (Default) • 1920 × 1080 • 1600 × 900 • 1280 × 720"
+                         else "$w × $h (Default) • 1600 × 900 • 1366 × 768 • 1280 × 720"
+            }
+            // 4:3 (1.333...) - e.g. 1024x768
+            kotlin.math.abs(ratio - 4.0 / 3.0) < 0.05 -> {
+                "4:3" to "$w × $h (Default) • 1600 × 1200 • 1400 × 1050 • 1024 × 768"
+            }
+            else -> {
+                fun gcd(a: Int, b: Int): Int = if (b == 0) a else gcd(b, a % b)
+                val d = gcd(w, h)
+                val rw = w / d
+                val rh = h / d
+                val aspect = if (rw <= 20 && rh <= 20) "$rw:$rh" else String.format(java.util.Locale.US, "%.2f:1", ratio)
+                aspect to "$w × $h (Default)"
+            }
         }
-        // 3:2 (1.50) - e.g. 2160x1440
-        kotlin.math.abs(ratio - 1.5) < 0.05 -> {
-            "3:2" to "$w × $h (Default) • 1620 × 1080 • 1344 × 896 • 1080 × 720"
-        }
-        // 16:9 (1.777...) - e.g. 1920x1080
-        kotlin.math.abs(ratio - 16.0 / 9.0) < 0.05 -> {
-            "16:9" to if (w >= 3840) "$w × $h (Default) • 2560 × 1440 • 1920 × 1080 • 1280 × 720"
-                     else if (w >= 2560) "$w × $h (Default) • 1920 × 1080 • 1600 × 900 • 1280 × 720"
-                     else "$w × $h (Default) • 1600 × 900 • 1366 × 768 • 1280 × 720"
-        }
-        // 4:3 (1.333...) - e.g. 1024x768
-        kotlin.math.abs(ratio - 4.0 / 3.0) < 0.05 -> {
-            "4:3" to "$w × $h (Default) • 1600 × 1200 • 1400 × 1050 • 1024 × 768"
-        }
-        else -> {
-            fun gcd(a: Int, b: Int): Int = if (b == 0) a else gcd(b, a % b)
-            val d = gcd(w, h)
-            val rw = w / d
-            val rh = h / d
-            val aspect = if (rw <= 20 && rh <= 20) "$rw:$rh" else String.format(java.util.Locale.US, "%.2f:1", ratio)
-            aspect to "$w × $h (Default)"
+    } else {
+        when {
+            // 10:16 (0.625) - e.g. 800x1280 (8" Portal Mini)
+            kotlin.math.abs(ratio - 10.0 / 16.0) < 0.05 -> {
+                "10:16" to "$w × $h (Default) • 900 × 1440 • 1050 × 1680 • 1200 × 1920"
+            }
+            // 2:3 (0.666...) - e.g. 1440x2160
+            kotlin.math.abs(ratio - 2.0 / 3.0) < 0.05 -> {
+                "2:3" to "$w × $h (Default) • 1080 × 1620 • 896 × 1344 • 720 × 1080"
+            }
+            // 9:16 (0.5625) - e.g. 1080x1920 (Portal+ Gen 1)
+            kotlin.math.abs(ratio - 9.0 / 16.0) < 0.05 -> {
+                "9:16" to if (h >= 3840) "$w × $h (Default) • 1440 × 2560 • 1080 × 1920 • 720 × 1280"
+                         else if (h >= 2560) "$w × $h (Default) • 1080 × 1920 • 900 × 1600 • 720 × 1280"
+                         else "$w × $h (Default) • 900 × 1600 • 768 × 1366 • 720 × 1280"
+            }
+            // 3:4 (0.75) - e.g. 768x1024
+            kotlin.math.abs(ratio - 3.0 / 4.0) < 0.05 -> {
+                "3:4" to "$w × $h (Default) • 1200 × 1600 • 1050 × 1400 • 768 × 1024"
+            }
+            else -> {
+                fun gcd(a: Int, b: Int): Int = if (b == 0) a else gcd(b, a % b)
+                val d = gcd(w, h)
+                val rw = w / d
+                val rh = h / d
+                val aspect = if (rw <= 20 && rh <= 20) "$rw:$rh" else String.format(java.util.Locale.US, "1:%.2f", 1.0 / ratio)
+                aspect to "$w × $h (Default)"
+            }
         }
     }
 
@@ -99,6 +138,7 @@ class MainActivity : ComponentActivity() {
     private var networkDetails by mutableStateOf(NetworkInfoHelper.NetworkDetails("...", "...", false))
     // Android 10+ only lets the service bring this activity forward with "Display over other apps".
     private var canAutoOpen by mutableStateOf(true)
+    private var orientationListener: OrientationEventListener? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -121,6 +161,9 @@ class MainActivity : ComponentActivity() {
             ?: windowManager.defaultDisplay.refreshRate.toInt()
         WormholeServer.updateDisplayMetrics(metrics.widthPixels, metrics.heightPixels, fps)
 
+        setupOrientationListener()
+        updateOrientationMode(WormholeServer.orientationSetting.value)
+
         WormholeService.start(this)
 
         setContent {
@@ -130,6 +173,11 @@ class MainActivity : ComponentActivity() {
             val videoAspectRatio by WormholeServer.videoAspectRatio.collectAsState()
             val recentConnections by WormholeServer.recentConnections.collectAsState()
             val displayInfo by WormholeServer.displayInfo.collectAsState()
+            val orientationSetting by WormholeServer.orientationSetting.collectAsState()
+
+            LaunchedEffect(orientationSetting) {
+                updateOrientationMode(orientationSetting)
+            }
 
             var audioEnabled by remember { mutableStateOf(WormholeServer.audioEnabled) }
             var debugOverlayEnabled by remember { mutableStateOf(WormholeServer.debugOverlayEnabled) }
@@ -227,7 +275,9 @@ class MainActivity : ComponentActivity() {
                                 WormholeServer.restartServer()
                                 networkDetails = NetworkInfoHelper.getNetworkDetails(this@MainActivity)
                             },
-                            recentConnections = recentConnections
+                            recentConnections = recentConnections,
+                            orientationSetting = orientationSetting,
+                            onOrientationSettingChanged = { WormholeServer.setOrientationSetting(it) }
                         )
                     }
                 }
@@ -240,6 +290,9 @@ class MainActivity : ComponentActivity() {
         WormholeServer.isActivityResumed = true
         networkDetails = NetworkInfoHelper.getNetworkDetails(this)
         canAutoOpen = Settings.canDrawOverlays(this)
+        if (WormholeServer.orientationSetting.value == ScreenOrientation.AUTO && WormholeIdentity.hasOrientationSensor(this)) {
+            orientationListener?.enable()
+        }
     }
 
     private fun openOverlaySettings() {
@@ -252,6 +305,60 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         WormholeServer.isActivityResumed = false
+        orientationListener?.disable()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val metrics = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION")
+        windowManager.defaultDisplay.getRealMetrics(metrics)
+        @Suppress("DEPRECATION")
+        val fps = windowManager.defaultDisplay.mode?.refreshRate?.toInt()
+            ?: windowManager.defaultDisplay.refreshRate.toInt()
+        WormholeServer.updateDisplayMetrics(metrics.widthPixels, metrics.heightPixels, fps)
+        if (WormholeServer.orientationSetting.value == ScreenOrientation.AUTO && WormholeIdentity.hasOrientationSensor(this)) {
+            WormholeServer.onDetectedOrientationChanged(newConfig.orientation == Configuration.ORIENTATION_PORTRAIT)
+        }
+    }
+
+    private fun updateOrientationMode(setting: ScreenOrientation) {
+        val effectiveSetting = if (!WormholeIdentity.hasOrientationSensor(this) && setting == ScreenOrientation.AUTO) {
+            ScreenOrientation.LANDSCAPE
+        } else {
+            setting
+        }
+        requestedOrientation = when (effectiveSetting) {
+            ScreenOrientation.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            ScreenOrientation.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            ScreenOrientation.AUTO -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+        }
+        if (effectiveSetting == ScreenOrientation.AUTO && WormholeIdentity.hasOrientationSensor(this)) {
+            orientationListener?.enable()
+        } else {
+            orientationListener?.disable()
+        }
+    }
+
+    private fun setupOrientationListener() {
+        if (!WormholeIdentity.hasOrientationSensor(this)) return
+        orientationListener = object : OrientationEventListener(this, SensorManager.SENSOR_DELAY_NORMAL) {
+            private var candidateIsPortrait: Boolean? = null
+            private var candidateSince = 0L
+            private val debounceMs = 400L
+
+            override fun onOrientationChanged(degrees: Int) {
+                if (degrees == ORIENTATION_UNKNOWN) return
+                val isPortrait = (degrees in 315..359 || degrees in 0..45 || degrees in 135..225)
+                val now = SystemClock.uptimeMillis()
+                if (candidateIsPortrait != isPortrait) {
+                    candidateIsPortrait = isPortrait
+                    candidateSince = now
+                } else if (now - candidateSince >= debounceMs) {
+                    WormholeServer.onDetectedOrientationChanged(isPortrait)
+                }
+            }
+        }
     }
 
     // Home is a deliberate exit; not called when the service brings this activity forward.
@@ -261,6 +368,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        orientationListener?.disable()
         WormholeServer.setSurface(null)
         if (!WormholeServer.runInBackground) {
             WormholeService.stop(this)
@@ -343,10 +451,21 @@ private fun DashboardScreen(
     canAutoOpen: Boolean,
     onRequestAutoOpen: () -> Unit,
     onRestartServer: () -> Unit,
-    recentConnections: List<ConnectionEntry>
+    recentConnections: List<ConnectionEntry>,
+    orientationSetting: ScreenOrientation,
+    onOrientationSettingChanged: (ScreenOrientation) -> Unit
 ) {
     var showNameDialog by remember { mutableStateOf(false) }
     val configuration = LocalConfiguration.current
+    val context = LocalContext.current
+    val isAutoSupported = remember(context) { WormholeIdentity.hasOrientationSensor(context) }
+    val availableOrientations = remember(isAutoSupported) {
+        if (isAutoSupported) {
+            ScreenOrientation.values().toList()
+        } else {
+            listOf(ScreenOrientation.LANDSCAPE, ScreenOrientation.PORTRAIT)
+        }
+    }
     val screenHeightDp = configuration.screenHeightDp
     val isTvOrCompact = screenHeightDp <= 650
     val isCompactScreen = displayInfo.height <= 900 || screenHeightDp <= 800
@@ -370,7 +489,7 @@ private fun DashboardScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                 Text(
                     text = "Wormhole Display",
                     fontSize = if (isTvOrCompact) 20.sp else if (isCompactScreen) 26.sp else 32.sp,
@@ -414,476 +533,589 @@ private fun DashboardScreen(
 
         Spacer(modifier = Modifier.height(if (isTvOrCompact) 4.dp else if (isCompactScreen) 12.dp else 28.dp))
 
-        // Two-column dashboard content
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(columnSpacing)
-        ) {
-            // Left Column: Settings & Network Info
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(cardSpacing)
-            ) {
-                // Card 1: Controls & Server Control
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(if (isTvOrCompact) 12.dp else 16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, Color(0xFF1F3146))
-                ) {
-                    Column(modifier = Modifier.padding(cardPadding)) {
-                        Text(
-                            text = "Controls & Playback",
-                            fontSize = if (isTvOrCompact) 13.sp else if (isCompactScreen) 16.sp else 18.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFFF1F5F9)
-                        )
-                        Spacer(modifier = Modifier.height(if (isTvOrCompact) 2.dp else if (isCompactScreen) 8.dp else 14.dp))
+        val isPortraitLayout = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
 
-                        // Row 1: Speaker Output
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .tvFocusable(
-                                    shape = RoundedCornerShape(8.dp),
-                                    onClick = { onAudioEnabledChanged(!audioEnabled) }
-                                )
-                                .padding(
-                                    horizontal = if (isTvOrCompact) 8.dp else 10.dp,
-                                    vertical = if (isTvOrCompact) 1.dp else 6.dp
-                                ),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Speaker Output",
-                                    fontSize = if (isTvOrCompact) 12.sp else 15.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color(0xFFE2E8F0)
-                                )
-                                Text(
-                                    text = if (audioEnabled) "Play sound through device speakers" else "Device speakers muted",
-                                    fontSize = if (isTvOrCompact) 10.sp else 12.sp,
-                                    color = Color(0xFF94A3B8)
-                                )
-                            }
-                            Switch(
-                                checked = audioEnabled,
-                                onCheckedChange = null,
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color(0xFF09121E),
-                                    checkedTrackColor = Color(0xFF7DE2CE),
-                                    uncheckedThumbColor = Color(0xFF94A3B8),
-                                    uncheckedTrackColor = Color(0xFF1B2B3E)
-                                ),
-                                modifier = if (isTvOrCompact) Modifier.scale(0.8f) else Modifier
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(dividerSpacing))
-                        HorizontalDivider(color = Color(0xFF1F3146), thickness = 0.5.dp)
-                        Spacer(modifier = Modifier.height(dividerSpacing))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth()
-                                .tvFocusable(shape = RoundedCornerShape(8.dp), onClick = { onHevcEnabledChanged(!hevcEnabled) })
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text("H.265 video (Experimental)", color = Color(0xFFE2E8F0), fontSize = if (isTvOrCompact) 12.sp else 15.sp)
-                                Text("Allow compatible senders to use H.265. Reconnect after changing. H.264 remains available.",
-                                    color = Color(0xFF94A3B8), fontSize = if (isTvOrCompact) 10.sp else 12.sp)
-                            }
-                            Switch(checked = hevcEnabled, onCheckedChange = null)
-                        }
-                        Spacer(modifier = Modifier.height(dividerSpacing))
-                        HorizontalDivider(color = Color(0xFF1F3146), thickness = 0.5.dp)
-                        Spacer(modifier = Modifier.height(dividerSpacing))
-
-                        // Row 2: Telemetry Overlay
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .tvFocusable(
-                                    shape = RoundedCornerShape(8.dp),
-                                    onClick = { onDebugOverlayEnabledChanged(!debugOverlayEnabled) }
-                                )
-                                .padding(
-                                    horizontal = if (isTvOrCompact) 8.dp else 10.dp,
-                                    vertical = if (isTvOrCompact) 1.dp else 6.dp
-                                ),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Telemetry Overlay (Debug)",
-                                    fontSize = if (isTvOrCompact) 12.sp else 15.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color(0xFFE2E8F0)
-                                )
-                                Text(
-                                    text = if (isTvOrCompact) "Display real-time stream stats in top-left" else "Display real-time stream stats (FPS, bitrate, resolution, codec) in top-left corner",
-                                    fontSize = if (isTvOrCompact) 10.sp else 12.sp,
-                                    color = Color(0xFF94A3B8)
-                                )
-                            }
-                            Switch(
-                                checked = debugOverlayEnabled,
-                                onCheckedChange = null,
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color(0xFF09121E),
-                                    checkedTrackColor = Color(0xFF7DE2CE),
-                                    uncheckedThumbColor = Color(0xFF94A3B8),
-                                    uncheckedTrackColor = Color(0xFF1B2B3E)
-                                ),
-                                modifier = if (isTvOrCompact) Modifier.scale(0.8f) else Modifier
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(dividerSpacing))
-                        HorizontalDivider(color = Color(0xFF1F3146), thickness = 0.5.dp)
-                        Spacer(modifier = Modifier.height(dividerSpacing))
-
-                        // Row 3: Run in Background
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .tvFocusable(
-                                    shape = RoundedCornerShape(8.dp),
-                                    onClick = { onRunInBackgroundChanged(!runInBackground) }
-                                )
-                                .padding(
-                                    horizontal = if (isTvOrCompact) 8.dp else 10.dp,
-                                    vertical = if (isTvOrCompact) 1.dp else 6.dp
-                                ),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Run in Background",
-                                    fontSize = if (isTvOrCompact) 12.sp else 15.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color(0xFFE2E8F0)
-                                )
-                                Text(
-                                    text = if (isTvOrCompact) "Keep receiver discoverable when closed" else "Keep receiver discoverable when app is closed or minimized",
-                                    fontSize = if (isTvOrCompact) 10.sp else 12.sp,
-                                    color = Color(0xFF94A3B8)
-                                )
-                            }
-                            Switch(
-                                checked = runInBackground,
-                                onCheckedChange = null,
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color(0xFF09121E),
-                                    checkedTrackColor = Color(0xFF7DE2CE),
-                                    uncheckedThumbColor = Color(0xFF94A3B8),
-                                    uncheckedTrackColor = Color(0xFF1B2B3E)
-                                ),
-                                modifier = if (isTvOrCompact) Modifier.scale(0.8f) else Modifier
-                            )
-                        }
-
-                        if (!canAutoOpen) {
-                            Spacer(modifier = Modifier.height(dividerSpacing))
-                            HorizontalDivider(color = Color(0xFF1F3146), thickness = 0.5.dp)
-                            Spacer(modifier = Modifier.height(dividerSpacing))
-
-                            // Row 3b: Auto-open permission (shown only while missing)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .tvFocusable(
-                                        shape = RoundedCornerShape(8.dp),
-                                        onClick = { onRequestAutoOpen() }
-                                    )
-                                    .padding(
-                                        horizontal = if (isTvOrCompact) 8.dp else 10.dp,
-                                        vertical = if (isTvOrCompact) 1.dp else 6.dp
-                                    ),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "Auto-open on connect",
-                                        fontSize = if (isTvOrCompact) 12.sp else 15.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = Color(0xFFFBBF24)
-                                    )
-                                    Text(
-                                        text = if (isTvOrCompact) "Needs \"Display over other apps\"" else "Allow \"Display over other apps\" so incoming streams open full screen from the background",
-                                        fontSize = if (isTvOrCompact) 10.sp else 12.sp,
-                                        color = Color(0xFF94A3B8)
-                                    )
-                                }
-                                Text(
-                                    text = "Allow",
-                                    fontSize = if (isTvOrCompact) 12.sp else 14.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFF7DE2CE)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(dividerSpacing))
-                        HorizontalDivider(color = Color(0xFF1F3146), thickness = 0.5.dp)
-                        Spacer(modifier = Modifier.height(dividerSpacing))
-
-                        // Row 4: Start on Boot
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .tvFocusable(
-                                    shape = RoundedCornerShape(8.dp),
-                                    onClick = { onStartOnBootChanged(!startOnBoot) }
-                                )
-                                .padding(
-                                    horizontal = if (isTvOrCompact) 8.dp else 10.dp,
-                                    vertical = if (isTvOrCompact) 1.dp else 6.dp
-                                ),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Start on Boot",
-                                    fontSize = if (isTvOrCompact) 12.sp else 15.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color(0xFFE2E8F0)
-                                )
-                                Text(
-                                    text = if (isTvOrCompact) "Start receiver when device powers on" else "Automatically start receiver when device powers on",
-                                    fontSize = if (isTvOrCompact) 10.sp else 12.sp,
-                                    color = Color(0xFF94A3B8)
-                                )
-                            }
-                            Switch(
-                                checked = startOnBoot,
-                                onCheckedChange = null,
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color(0xFF09121E),
-                                    checkedTrackColor = Color(0xFF7DE2CE),
-                                    uncheckedThumbColor = Color(0xFF94A3B8),
-                                    uncheckedTrackColor = Color(0xFF1B2B3E)
-                                ),
-                                modifier = if (isTvOrCompact) Modifier.scale(0.8f) else Modifier
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(dividerSpacing))
-                        HorizontalDivider(color = Color(0xFF1F3146), thickness = 0.5.dp)
-                        Spacer(modifier = Modifier.height(dividerSpacing))
-
-                        // Row 5: Bonjour Service Name
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .tvFocusable(
-                                    shape = RoundedCornerShape(8.dp),
-                                    onClick = { showNameDialog = true }
-                                )
-                                .padding(
-                                    horizontal = if (isTvOrCompact) 8.dp else 10.dp,
-                                    vertical = if (isTvOrCompact) 1.dp else 6.dp
-                                ),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Bonjour Service Name",
-                                    fontSize = if (isTvOrCompact) 12.sp else 15.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color(0xFFE2E8F0)
-                                )
-                                Text(
-                                    text = "Advertised in Screen Mirroring as: \"$serviceName\"",
-                                    fontSize = if (isTvOrCompact) 10.sp else 12.sp,
-                                    color = Color(0xFF94A3B8)
-                                )
-                            }
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, Color(0xFF7DE2CE)),
-                                color = Color(0xFF0E2A24)
-                            ) {
-                                Text(
-                                    text = "Rename",
-                                    fontSize = if (isTvOrCompact) 10.sp else 12.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color(0xFF7DE2CE),
-                                    modifier = Modifier.padding(
-                                        horizontal = if (isTvOrCompact) 8.dp else 12.dp,
-                                        vertical = if (isTvOrCompact) 3.dp else 6.dp
-                                    )
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(dividerSpacing))
-                        HorizontalDivider(color = Color(0xFF1F3146), thickness = 0.5.dp)
-                        Spacer(modifier = Modifier.height(dividerSpacing))
-
-                        // Row 6: Receiver Service
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .tvFocusable(
-                                    shape = RoundedCornerShape(8.dp),
-                                    onClick = onRestartServer
-                                )
-                                .padding(
-                                    horizontal = if (isTvOrCompact) 8.dp else 10.dp,
-                                    vertical = if (isTvOrCompact) 1.dp else 6.dp
-                                ),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Receiver Service",
-                                    fontSize = if (isTvOrCompact) 12.sp else 15.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color(0xFFE2E8F0)
-                                )
-                                Text(
-                                    text = "Restart mDNS responder and RTSP server",
-                                    fontSize = if (isTvOrCompact) 10.sp else 12.sp,
-                                    color = Color(0xFF94A3B8)
-                                )
-                            }
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, Color(0xFF7DE2CE)),
-                                color = Color(0xFF0E2A24)
-                            ) {
-                                Text(
-                                    text = "Restart Server",
-                                    fontSize = if (isTvOrCompact) 10.sp else 12.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color(0xFF7DE2CE),
-                                    modifier = Modifier.padding(
-                                        horizontal = if (isTvOrCompact) 8.dp else 12.dp,
-                                        vertical = if (isTvOrCompact) 3.dp else 6.dp
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Card 2: Network & Diagnostics
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .tvFocusable(
-                            shape = RoundedCornerShape(if (isTvOrCompact) 12.dp else 16.dp),
-                            unfocusedBorderColor = Color(0xFF1F3146),
-                            borderWidth = 1.dp
-                        ),
-                    shape = RoundedCornerShape(if (isTvOrCompact) 12.dp else 16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    Column(modifier = Modifier.padding(cardPadding)) {
-                        Text(
-                            text = "Network & Diagnostics",
-                            fontSize = if (isTvOrCompact) 12.sp else if (isCompactScreen) 16.sp else 18.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFFF1F5F9)
-                        )
-                        Spacer(modifier = Modifier.height(if (isTvOrCompact) 2.dp else if (isCompactScreen) 8.dp else 14.dp))
-                        if (isTvOrCompact) {
-                            Row(modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    InfoRow(label = "Wi-Fi", value = networkDetails.wifiSsid, fontSize = 11.sp)
-                                    Spacer(modifier = Modifier.height(1.dp))
-                                    InfoRow(label = "Bonjour", value = "$serviceName (7000)", fontSize = 11.sp)
-                                }
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    InfoRow(label = "Device IP", value = networkDetails.ipAddress, fontSize = 11.sp)
-                                    Spacer(modifier = Modifier.height(1.dp))
-                                    InfoRow(label = "Display", value = "${displayInfo.width}×${displayInfo.height}@${displayInfo.refreshRate}Hz", fontSize = 11.sp)
-                                }
-                            }
-                        } else {
-                            InfoRow(label = "Wi-Fi Network", value = networkDetails.wifiSsid)
-                            Spacer(modifier = Modifier.height(if (isCompactScreen) 4.dp else 8.dp))
-                            InfoRow(label = "Device IP", value = networkDetails.ipAddress)
-                            Spacer(modifier = Modifier.height(if (isCompactScreen) 4.dp else 8.dp))
-                            InfoRow(label = "Bonjour Service", value = "$serviceName (Port 7000)")
-                            Spacer(modifier = Modifier.height(if (isCompactScreen) 4.dp else 8.dp))
-                            InfoRow(label = "Display", value = "${displayInfo.width} × ${displayInfo.height} @ ${displayInfo.refreshRate}Hz (Auto-fit)")
-                        }
-                    }
-                }
-
-                // Card 3: Preferred Resolutions & Aspect Ratio Guide
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .tvFocusable(
-                            shape = RoundedCornerShape(if (isTvOrCompact) 12.dp else 16.dp),
-                            unfocusedBorderColor = Color(0xFF1F3146),
-                            borderWidth = 1.dp
-                        ),
-                    shape = RoundedCornerShape(if (isTvOrCompact) 12.dp else 16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    Column(modifier = Modifier.padding(cardPadding)) {
-                        Text(
-                            text = "Preferred Resolutions (${displayInfo.aspectRatioLabel})",
-                            fontSize = if (isTvOrCompact) 12.sp else if (isCompactScreen) 16.sp else 18.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFFF1F5F9)
-                        )
-                        Spacer(modifier = Modifier.height(if (isTvOrCompact) 2.dp else if (isCompactScreen) 6.dp else 12.dp))
-                        Text(
-                            text = displayInfo.recommendedResolutions,
-                            fontSize = if (isTvOrCompact) 10.sp else 12.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFF7DE2CE)
-                        )
-                        Spacer(modifier = Modifier.height(if (isTvOrCompact) 1.dp else if (isCompactScreen) 4.dp else 8.dp))
-                        Text(
-                            text = if (isTvOrCompact)
-                                "In macOS Settings → Displays, select $serviceName and toggle \"Show all resolutions\"."
-                            else
-                                "In macOS System Settings → Displays, select $serviceName and toggle \"Show all resolutions\" to pick from these ${displayInfo.aspectRatioLabel} modes (both Extended & Mirroring supported).",
-                            fontSize = if (isTvOrCompact) 10.sp else 12.sp,
-                            color = Color(0xFF94A3B8),
-                            lineHeight = if (isTvOrCompact) 12.sp else 16.sp
-                        )
-                    }
-                }
-            }
-
-            // Right Column: Last 5 Connections Card
+        val controlsCard = @Composable {
             Card(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
+                modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(if (isTvOrCompact) 12.dp else 16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 border = BorderStroke(1.dp, Color(0xFF1F3146))
             ) {
-                Column(
-                    modifier = Modifier
+                Column(modifier = Modifier.padding(cardPadding)) {
+                    Text(
+                        text = "Controls & Playback",
+                        fontSize = if (isTvOrCompact) 13.sp else if (isCompactScreen) 16.sp else 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFF1F5F9)
+                    )
+                    Spacer(modifier = Modifier.height(if (isTvOrCompact) 2.dp else if (isCompactScreen) 8.dp else 14.dp))
+
+                    // Row 0: Screen Orientation
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                horizontal = if (isTvOrCompact) 8.dp else 10.dp,
+                                vertical = if (isTvOrCompact) 1.dp else 6.dp
+                            ),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text(
+                                text = "Screen Orientation",
+                                fontSize = if (isTvOrCompact) 12.sp else 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFFE2E8F0)
+                            )
+                            Text(
+                                text = when (orientationSetting) {
+                                    ScreenOrientation.LANDSCAPE -> if (!isAutoSupported) "Landscape (wide)" else "Forced landscape (wide)"
+                                    ScreenOrientation.PORTRAIT -> if (!isAutoSupported) "Portrait (tall)" else "Forced portrait (tall)"
+                                    ScreenOrientation.AUTO -> "Auto-detect from tilt sensor"
+                                },
+                                fontSize = if (isTvOrCompact) 10.sp else 12.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            availableOrientations.forEach { option ->
+                                val isSelected = orientationSetting == option
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (isSelected) Color(0xFF1E5246) else Color(0xFF0F1A26),
+                                    border = BorderStroke(1.dp, if (isSelected) Color(0xFF7DE2CE) else Color(0xFF1F3146)),
+                                    modifier = Modifier
+                                        .tvFocusable(
+                                            shape = RoundedCornerShape(6.dp),
+                                            onClick = { onOrientationSettingChanged(option) }
+                                        )
+                                        .clickable { onOrientationSettingChanged(option) }
+                                ) {
+                                    Text(
+                                        text = option.label,
+                                        fontSize = if (isTvOrCompact) 9.sp else 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (isSelected) Color(0xFF7DE2CE) else Color(0xFF94A3B8),
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(dividerSpacing))
+                    HorizontalDivider(color = Color(0xFF1F3146), thickness = 0.5.dp)
+                    Spacer(modifier = Modifier.height(dividerSpacing))
+
+                    // Row 1: Speaker Output
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .tvFocusable(
+                                shape = RoundedCornerShape(8.dp),
+                                onClick = { onAudioEnabledChanged(!audioEnabled) }
+                            )
+                            .padding(
+                                horizontal = if (isTvOrCompact) 8.dp else 10.dp,
+                                vertical = if (isTvOrCompact) 1.dp else 6.dp
+                            ),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Speaker Output",
+                                fontSize = if (isTvOrCompact) 12.sp else 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFFE2E8F0)
+                            )
+                            Text(
+                                text = if (audioEnabled) "Play sound through device speakers" else "Device speakers muted",
+                                fontSize = if (isTvOrCompact) 10.sp else 12.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                        Switch(
+                            checked = audioEnabled,
+                            onCheckedChange = null,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF09121E),
+                                checkedTrackColor = Color(0xFF7DE2CE),
+                                uncheckedThumbColor = Color(0xFF94A3B8),
+                                uncheckedTrackColor = Color(0xFF1B2B3E)
+                            ),
+                            modifier = if (isTvOrCompact) Modifier.scale(0.8f) else Modifier
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(dividerSpacing))
+                    HorizontalDivider(color = Color(0xFF1F3146), thickness = 0.5.dp)
+                    Spacer(modifier = Modifier.height(dividerSpacing))
+
+                    // Row 2: H.265 / HEVC Video (Experimental)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .tvFocusable(
+                                shape = RoundedCornerShape(8.dp),
+                                onClick = { onHevcEnabledChanged(!hevcEnabled) }
+                            )
+                            .padding(
+                                horizontal = if (isTvOrCompact) 8.dp else 10.dp,
+                                vertical = if (isTvOrCompact) 1.dp else 6.dp
+                            ),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "H.265 video (Experimental)",
+                                fontSize = if (isTvOrCompact) 12.sp else 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFFE2E8F0)
+                            )
+                            Text(
+                                text = "Allow compatible senders to use H.265. Reconnect after changing. H.264 remains available.",
+                                fontSize = if (isTvOrCompact) 10.sp else 12.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                        Switch(
+                            checked = hevcEnabled,
+                            onCheckedChange = null,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF09121E),
+                                checkedTrackColor = Color(0xFF7DE2CE),
+                                uncheckedThumbColor = Color(0xFF94A3B8),
+                                uncheckedTrackColor = Color(0xFF1B2B3E)
+                            ),
+                            modifier = if (isTvOrCompact) Modifier.scale(0.8f) else Modifier
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(dividerSpacing))
+                    HorizontalDivider(color = Color(0xFF1F3146), thickness = 0.5.dp)
+                    Spacer(modifier = Modifier.height(dividerSpacing))
+
+                    // Row 2b: Telemetry Overlay (Debug)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .tvFocusable(
+                                shape = RoundedCornerShape(8.dp),
+                                onClick = { onDebugOverlayEnabledChanged(!debugOverlayEnabled) }
+                            )
+                            .padding(
+                                horizontal = if (isTvOrCompact) 8.dp else 10.dp,
+                                vertical = if (isTvOrCompact) 1.dp else 6.dp
+                            ),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Telemetry Overlay (Debug)",
+                                fontSize = if (isTvOrCompact) 12.sp else 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFFE2E8F0)
+                            )
+                            Text(
+                                text = "Display real-time stream stats (FPS, bitrate, resolution, codec) in top-left corner",
+                                fontSize = if (isTvOrCompact) 10.sp else 12.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                        Switch(
+                            checked = debugOverlayEnabled,
+                            onCheckedChange = null,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF09121E),
+                                checkedTrackColor = Color(0xFF7DE2CE),
+                                uncheckedThumbColor = Color(0xFF94A3B8),
+                                uncheckedTrackColor = Color(0xFF1B2B3E)
+                            ),
+                            modifier = if (isTvOrCompact) Modifier.scale(0.8f) else Modifier
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(dividerSpacing))
+                    HorizontalDivider(color = Color(0xFF1F3146), thickness = 0.5.dp)
+                    Spacer(modifier = Modifier.height(dividerSpacing))
+
+                    // Row 3: Run in Background
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .tvFocusable(
+                                shape = RoundedCornerShape(8.dp),
+                                onClick = { onRunInBackgroundChanged(!runInBackground) }
+                            )
+                            .padding(
+                                horizontal = if (isTvOrCompact) 8.dp else 10.dp,
+                                vertical = if (isTvOrCompact) 1.dp else 6.dp
+                            ),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Run in Background",
+                                fontSize = if (isTvOrCompact) 12.sp else 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFFE2E8F0)
+                            )
+                            Text(
+                                text = "Keep receiver discoverable when app is closed or minimized",
+                                fontSize = if (isTvOrCompact) 10.sp else 12.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                        Switch(
+                            checked = runInBackground,
+                            onCheckedChange = null,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF09121E),
+                                checkedTrackColor = Color(0xFF7DE2CE),
+                                uncheckedThumbColor = Color(0xFF94A3B8),
+                                uncheckedTrackColor = Color(0xFF1B2B3E)
+                            ),
+                            modifier = if (isTvOrCompact) Modifier.scale(0.8f) else Modifier
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(dividerSpacing))
+                    HorizontalDivider(color = Color(0xFF1F3146), thickness = 0.5.dp)
+                    Spacer(modifier = Modifier.height(dividerSpacing))
+
+                    // Row 3b: Auto-open on connect
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .tvFocusable(
+                                shape = RoundedCornerShape(8.dp),
+                                onClick = if (!canAutoOpen) onRequestAutoOpen else null
+                            )
+                            .padding(
+                                horizontal = if (isTvOrCompact) 8.dp else 10.dp,
+                                vertical = if (isTvOrCompact) 1.dp else 6.dp
+                            ),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Auto-open on connect",
+                                fontSize = if (isTvOrCompact) 12.sp else 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = if (canAutoOpen) Color(0xFFE2E8F0) else Color(0xFFF59E0B)
+                            )
+                            Text(
+                                text = if (canAutoOpen)
+                                    "App brings itself to front when a device starts streaming"
+                                else
+                                    "Allow \"Display over other apps\" so the receiver can show the stream automatically",
+                                fontSize = if (isTvOrCompact) 10.sp else 12.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                        if (!canAutoOpen) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, Color(0xFFF59E0B)),
+                                color = Color(0xFF261D0C),
+                                modifier = Modifier
+                                    .clickable { onRequestAutoOpen() }
+                                    .padding(start = 8.dp)
+                            ) {
+                                Text(
+                                    text = "Allow",
+                                    fontSize = if (isTvOrCompact) 10.sp else 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFFF59E0B),
+                                    modifier = Modifier.padding(
+                                        horizontal = if (isTvOrCompact) 8.dp else 12.dp,
+                                        vertical = if (isTvOrCompact) 3.dp else 6.dp
+                                    )
+                                )
+                            }
+                        } else {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFF0E2A24),
+                                border = BorderStroke(1.dp, Color(0xFF1E5246)),
+                                modifier = Modifier.padding(start = 8.dp)
+                            ) {
+                                Text(
+                                    text = "Enabled",
+                                    fontSize = if (isTvOrCompact) 10.sp else 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFF7DE2CE),
+                                    modifier = Modifier.padding(
+                                        horizontal = if (isTvOrCompact) 8.dp else 12.dp,
+                                        vertical = if (isTvOrCompact) 3.dp else 6.dp
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(dividerSpacing))
+                    HorizontalDivider(color = Color(0xFF1F3146), thickness = 0.5.dp)
+                    Spacer(modifier = Modifier.height(dividerSpacing))
+
+                    // Row 4: Start on Boot
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .tvFocusable(
+                                shape = RoundedCornerShape(8.dp),
+                                onClick = { onStartOnBootChanged(!startOnBoot) }
+                            )
+                            .padding(
+                                horizontal = if (isTvOrCompact) 8.dp else 10.dp,
+                                vertical = if (isTvOrCompact) 1.dp else 6.dp
+                            ),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Start on Boot",
+                                fontSize = if (isTvOrCompact) 12.sp else 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFFE2E8F0)
+                            )
+                            Text(
+                                text = if (isTvOrCompact) "Start receiver when device powers on" else "Automatically start receiver when device powers on",
+                                fontSize = if (isTvOrCompact) 10.sp else 12.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                        Switch(
+                            checked = startOnBoot,
+                            onCheckedChange = null,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF09121E),
+                                checkedTrackColor = Color(0xFF7DE2CE),
+                                uncheckedThumbColor = Color(0xFF94A3B8),
+                                uncheckedTrackColor = Color(0xFF1B2B3E)
+                            ),
+                            modifier = if (isTvOrCompact) Modifier.scale(0.8f) else Modifier
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(dividerSpacing))
+                    HorizontalDivider(color = Color(0xFF1F3146), thickness = 0.5.dp)
+                    Spacer(modifier = Modifier.height(dividerSpacing))
+
+                    // Row 5: Bonjour Service Name
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .tvFocusable(
+                                shape = RoundedCornerShape(8.dp),
+                                onClick = { showNameDialog = true }
+                            )
+                            .padding(
+                                horizontal = if (isTvOrCompact) 8.dp else 10.dp,
+                                vertical = if (isTvOrCompact) 1.dp else 6.dp
+                            ),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Bonjour Service Name",
+                                fontSize = if (isTvOrCompact) 12.sp else 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFFE2E8F0)
+                            )
+                            Text(
+                                text = "Advertised in Screen Mirroring as: \"$serviceName\"",
+                                fontSize = if (isTvOrCompact) 10.sp else 12.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color(0xFF7DE2CE)),
+                            color = Color(0xFF0E2A24)
+                        ) {
+                            Text(
+                                text = "Rename",
+                                fontSize = if (isTvOrCompact) 10.sp else 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFF7DE2CE),
+                                modifier = Modifier.padding(
+                                    horizontal = if (isTvOrCompact) 8.dp else 12.dp,
+                                    vertical = if (isTvOrCompact) 3.dp else 6.dp
+                                )
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(dividerSpacing))
+                    HorizontalDivider(color = Color(0xFF1F3146), thickness = 0.5.dp)
+                    Spacer(modifier = Modifier.height(dividerSpacing))
+
+                    // Row 6: Receiver Service
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .tvFocusable(
+                                shape = RoundedCornerShape(8.dp),
+                                onClick = onRestartServer
+                            )
+                            .padding(
+                                horizontal = if (isTvOrCompact) 8.dp else 10.dp,
+                                vertical = if (isTvOrCompact) 1.dp else 6.dp
+                            ),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Receiver Service",
+                                fontSize = if (isTvOrCompact) 12.sp else 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFFE2E8F0)
+                            )
+                            Text(
+                                text = "Restart if receiver does not appear on your device",
+                                fontSize = if (isTvOrCompact) 10.sp else 12.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color(0xFF1E5246)),
+                            color = Color(0xFF0F1A26)
+                        ) {
+                            Text(
+                                text = "Restart",
+                                fontSize = if (isTvOrCompact) 10.sp else 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFF94A3B8),
+                                modifier = Modifier.padding(
+                                    horizontal = if (isTvOrCompact) 8.dp else 12.dp,
+                                    vertical = if (isTvOrCompact) 3.dp else 6.dp
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        val networkCard = @Composable {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .tvFocusable(
+                        shape = RoundedCornerShape(if (isTvOrCompact) 12.dp else 16.dp),
+                        unfocusedBorderColor = Color(0xFF1F3146),
+                        borderWidth = 1.dp
+                    ),
+                shape = RoundedCornerShape(if (isTvOrCompact) 12.dp else 16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.padding(cardPadding)) {
+                    Text(
+                        text = "Network & Diagnostics",
+                        fontSize = if (isTvOrCompact) 12.sp else if (isCompactScreen) 16.sp else 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFF1F5F9)
+                    )
+                    Spacer(modifier = Modifier.height(if (isTvOrCompact) 2.dp else if (isCompactScreen) 8.dp else 14.dp))
+                    if (isTvOrCompact) {
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                InfoRow(label = "Wi-Fi", value = networkDetails.wifiSsid, fontSize = 11.sp)
+                                Spacer(modifier = Modifier.height(1.dp))
+                                InfoRow(label = "Bonjour", value = "$serviceName (7000)", fontSize = 11.sp)
+                            }
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                InfoRow(label = "Device IP", value = networkDetails.ipAddress, fontSize = 11.sp)
+                                Spacer(modifier = Modifier.height(1.dp))
+                                InfoRow(label = "Display", value = "${displayInfo.width}×${displayInfo.height}@${displayInfo.refreshRate}Hz", fontSize = 11.sp)
+                            }
+                        }
+                    } else {
+                        InfoRow(label = "Wi-Fi Network", value = networkDetails.wifiSsid)
+                        Spacer(modifier = Modifier.height(if (isCompactScreen) 4.dp else 8.dp))
+                        InfoRow(label = "Device IP", value = networkDetails.ipAddress)
+                        Spacer(modifier = Modifier.height(if (isCompactScreen) 4.dp else 8.dp))
+                        InfoRow(label = "Bonjour Service", value = "$serviceName (Port 7000)")
+                        Spacer(modifier = Modifier.height(if (isCompactScreen) 4.dp else 8.dp))
+                        InfoRow(label = "Display", value = "${displayInfo.width} × ${displayInfo.height} @ ${displayInfo.refreshRate}Hz (Auto-fit)")
+                    }
+                }
+            }
+        }
+
+        val resolutionsCard = @Composable {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .tvFocusable(
+                        shape = RoundedCornerShape(if (isTvOrCompact) 12.dp else 16.dp),
+                        unfocusedBorderColor = Color(0xFF1F3146),
+                        borderWidth = 1.dp
+                    ),
+                shape = RoundedCornerShape(if (isTvOrCompact) 12.dp else 16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.padding(cardPadding)) {
+                    Text(
+                        text = "Preferred Resolutions (${displayInfo.aspectRatioLabel})",
+                        fontSize = if (isTvOrCompact) 12.sp else if (isCompactScreen) 16.sp else 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFF1F5F9)
+                    )
+                    Spacer(modifier = Modifier.height(if (isTvOrCompact) 2.dp else if (isCompactScreen) 6.dp else 12.dp))
+                    Text(
+                        text = displayInfo.recommendedResolutions,
+                        fontSize = if (isTvOrCompact) 10.sp else 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF7DE2CE)
+                    )
+                    Spacer(modifier = Modifier.height(if (isTvOrCompact) 1.dp else if (isCompactScreen) 4.dp else 8.dp))
+                    Text(
+                        text = if (isTvOrCompact)
+                            "In macOS Settings → Displays, select $serviceName and toggle \"Show all resolutions\"."
+                        else
+                            "In macOS System Settings → Displays, select $serviceName and toggle \"Show all resolutions\" to pick from these ${displayInfo.aspectRatioLabel} modes (both Extended & Mirroring supported).",
+                        fontSize = if (isTvOrCompact) 10.sp else 12.sp,
+                        color = Color(0xFF94A3B8),
+                        lineHeight = if (isTvOrCompact) 12.sp else 16.sp
+                    )
+                }
+            }
+        }
+
+        val connectionsCard = @Composable { isFillMaxHeight: Boolean, modifier: Modifier ->
+            Card(
+                modifier = modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(if (isTvOrCompact) 12.dp else 16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, Color(0xFF1F3146))
+            ) {
+                val contentModifier = if (isFillMaxHeight) {
+                    Modifier
                         .padding(if (isTvOrCompact) 10.dp else if (isCompactScreen) 16.dp else 20.dp)
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
-                ) {
+                } else {
+                    Modifier
+                        .padding(if (isTvOrCompact) 10.dp else if (isCompactScreen) 16.dp else 20.dp)
+                        .fillMaxWidth()
+                }
+                Column(modifier = contentModifier) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -905,10 +1137,9 @@ private fun DashboardScreen(
                     Spacer(modifier = Modifier.height(if (isTvOrCompact) 6.dp else 16.dp))
 
                     if (recentConnections.isEmpty()) {
+                        val boxModifier = if (isFillMaxHeight) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth().padding(vertical = 24.dp)
                         Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
+                            modifier = boxModifier,
                             contentAlignment = Alignment.Center
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -980,6 +1211,41 @@ private fun DashboardScreen(
                         }
                     }
                 }
+            }
+        }
+
+        if (isPortraitLayout) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(cardSpacing)
+            ) {
+                controlsCard()
+                networkCard()
+                resolutionsCard()
+                connectionsCard(false, Modifier)
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(columnSpacing)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(cardSpacing)
+                ) {
+                    controlsCard()
+                    networkCard()
+                    resolutionsCard()
+                }
+                connectionsCard(true, Modifier.weight(1f).fillMaxHeight())
             }
         }
     }

@@ -20,7 +20,8 @@ Meta Portal devices are no longer made or sold, but the hardware is still great:
 
 It is an ordinary app that runs alongside Portal OS: **no root, no firmware changes, and no Meta services**. It only talks to Apple devices on your local Wi-Fi.
 
-- **Portal+ (Gen 2)**: a 14″ 2160×1440 extended display, with speakers, for your MacBook.
+- **Portal+ (Gen 2)**: a 14″ 2160×1440 extended display, with speakers, for your Mac.
+- **Portal Mini (8″)**: compact desktop display supporting both portrait and landscape.
 - **Portal Go**: a battery-powered wireless display you can carry from room to room.
 - **Portal TV**: turns your TV into a Screen Mirroring target, navigated with the Portal TV remote.
 
@@ -32,6 +33,7 @@ Wormhole Display is an independent community project and is not affiliated with 
 
 - **Shows up like any AirPlay display**: your Portal appears in Screen Mirroring as *Wormhole Plus*, *Wormhole Go* or *Wormhole TV*, or under a name you choose.
 - **Extended display or mirror**: macOS can use the Portal as a second screen, advertised at the panel's native resolution and refresh rate.
+- **Portrait & Landscape orientation**: choose between Landscape (widescreen), Portrait (tall), or Auto-detect. On rotatable hardware (like Portal Mini), **Auto** mode uses the device's tilt sensor to automatically flip the advertised AirPlay geometry when you physically rotate the display. Fixed-stand models (Portal TV, Portal Go, Portal+ Gen 2) default to Landscape, with manual Portrait selection available.
 - **Hardware video decoding**: H.264 on the Portal's hardware decoder, with experimental HEVC for senders that support it.
 - **Sound through the Portal**: audio plays on the Portal's speakers and can be muted from the dashboard.
 - **Opens when you connect**: the receiver stays available in the background and brings itself full screen when a stream starts. It can also start when the Portal boots.
@@ -46,11 +48,12 @@ Wormhole Display is an independent community project and is not affiliated with 
 
 Tested on:
 
-| Device | Display | Audio | Input |
-|---|---|---|---|
-| **Portal+ (Gen 2)** | 14″ 2160×1440 (3:2), 60 Hz | Stereo + subwoofer | Touch |
-| **Portal Go** | 10.1″ 1280×800 (16:10), 60 Hz | Stereo, battery powered | Touch |
-| **Portal TV** | Your TV over HDMI, 1080p (16:9), 60 Hz | TV or soundbar via HDMI | Remote (D-pad) |
+| Device | Display | Audio | Orientation | Input |
+|---|---|---|---|---|
+| **Portal+ (Gen 2)** | 14″ 2160×1440 (3:2), 60 Hz | Stereo + subwoofer | Fixed tilt (Landscape default, manual portrait) | Touch |
+| **Portal Mini (8″)** | 8″ 1280×800 (16:10), 60 Hz | Stereo | Dual-orientation body (Auto & manual) | Touch |
+| **Portal Go** | 10.1″ 1280×800 (16:10), 60 Hz | Stereo, battery powered | Fixed wedge (Landscape default, manual portrait) | Touch |
+| **Portal TV** | Your TV over HDMI, 1080p (16:9), 60 Hz | TV or soundbar via HDMI | Fixed (Landscape default, manual portrait) | Remote (D-pad) |
 
 Other Portal models haven't been tested yet; reports are welcome. Other Android 9+ (API 28+) 64-bit ARM devices may also work, but are untested.
 
