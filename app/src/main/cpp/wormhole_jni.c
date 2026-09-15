@@ -375,7 +375,7 @@ JNIEXPORT jint Java_io_github_pgodlews_wormhole_NativeBridge_nativeStart(JNIEnv 
     g_dnssd = dnssd;
     g_raop = raop;
     pthread_mutex_unlock(&g_lock);
-    LOGI("Receiver listening on port %d", port);
+    LOGI("Receiver listening on port %d (advertising %dx%d@%dHz, %s)", port, width, height, maxFps, width < height ? "portrait" : "landscape");
     return port;
 }
 

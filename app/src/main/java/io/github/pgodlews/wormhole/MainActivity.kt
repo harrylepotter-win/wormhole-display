@@ -3,12 +3,9 @@ package io.github.pgodlews.wormhole
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
-import android.hardware.SensorManager
 import android.net.Uri
 import android.os.Bundle
-import android.os.SystemClock
 import android.provider.Settings
-import android.view.OrientationEventListener
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
@@ -138,8 +135,7 @@ class MainActivity : ComponentActivity() {
     private var networkDetails by mutableStateOf(NetworkInfoHelper.NetworkDetails("...", "...", false))
     // Android 10+ only lets the service bring this activity forward with "Display over other apps".
     private var canAutoOpen by mutableStateOf(true)
-    private var orientationListener: OrientationEventListener? = null
-
+ 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
@@ -159,9 +155,9 @@ class MainActivity : ComponentActivity() {
         @Suppress("DEPRECATION")
         val fps = windowManager.defaultDisplay.mode?.refreshRate?.toInt()
             ?: windowManager.defaultDisplay.refreshRate.toInt()
-        WormholeServer.updateDisplayMetrics(metrics.widthPixels, metrics.heightPixels, fps)
+        val isPortrait = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+        WormholeServer.onConfigurationChanged(metrics.widthPixels, metrics.heightPixels, fps, isPortrait)
 
-        setupOrientationListener()
         updateOrientationMode(WormholeServer.orientationSetting.value)
 
         WormholeService.start(this)
@@ -290,9 +286,6 @@ class MainActivity : ComponentActivity() {
         WormholeServer.isActivityResumed = true
         networkDetails = NetworkInfoHelper.getNetworkDetails(this)
         canAutoOpen = Settings.canDrawOverlays(this)
-        if (WormholeServer.orientationSetting.value == ScreenOrientation.AUTO && WormholeIdentity.hasOrientationSensor(this)) {
-            orientationListener?.enable()
-        }
     }
 
     private fun openOverlaySettings() {
@@ -305,7 +298,6 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         WormholeServer.isActivityResumed = false
-        orientationListener?.disable()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -316,10 +308,8 @@ class MainActivity : ComponentActivity() {
         @Suppress("DEPRECATION")
         val fps = windowManager.defaultDisplay.mode?.refreshRate?.toInt()
             ?: windowManager.defaultDisplay.refreshRate.toInt()
-        WormholeServer.updateDisplayMetrics(metrics.widthPixels, metrics.heightPixels, fps)
-        if (WormholeServer.orientationSetting.value == ScreenOrientation.AUTO && WormholeIdentity.hasOrientationSensor(this)) {
-            WormholeServer.onDetectedOrientationChanged(newConfig.orientation == Configuration.ORIENTATION_PORTRAIT)
-        }
+        val isPortrait = newConfig.orientation == Configuration.ORIENTATION_PORTRAIT
+        WormholeServer.onConfigurationChanged(metrics.widthPixels, metrics.heightPixels, fps, isPortrait)
     }
 
     private fun updateOrientationMode(setting: ScreenOrientation) {
@@ -333,32 +323,6 @@ class MainActivity : ComponentActivity() {
             ScreenOrientation.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
             ScreenOrientation.AUTO -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
         }
-        if (effectiveSetting == ScreenOrientation.AUTO && WormholeIdentity.hasOrientationSensor(this)) {
-            orientationListener?.enable()
-        } else {
-            orientationListener?.disable()
-        }
-    }
-
-    private fun setupOrientationListener() {
-        if (!WormholeIdentity.hasOrientationSensor(this)) return
-        orientationListener = object : OrientationEventListener(this, SensorManager.SENSOR_DELAY_NORMAL) {
-            private var candidateIsPortrait: Boolean? = null
-            private var candidateSince = 0L
-            private val debounceMs = 400L
-
-            override fun onOrientationChanged(degrees: Int) {
-                if (degrees == ORIENTATION_UNKNOWN) return
-                val isPortrait = (degrees in 315..359 || degrees in 0..45 || degrees in 135..225)
-                val now = SystemClock.uptimeMillis()
-                if (candidateIsPortrait != isPortrait) {
-                    candidateIsPortrait = isPortrait
-                    candidateSince = now
-                } else if (now - candidateSince >= debounceMs) {
-                    WormholeServer.onDetectedOrientationChanged(isPortrait)
-                }
-            }
-        }
     }
 
     // Home is a deliberate exit; not called when the service brings this activity forward.
@@ -368,7 +332,6 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        orientationListener?.disable()
         WormholeServer.setSurface(null)
         if (!WormholeServer.runInBackground) {
             WormholeService.stop(this)

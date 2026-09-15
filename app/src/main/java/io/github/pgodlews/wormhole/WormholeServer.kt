@@ -2,6 +2,7 @@ package io.github.pgodlews.wormhole
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.res.Configuration
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Display
@@ -187,37 +188,17 @@ object WormholeServer {
         _orientationSetting.value = targetSetting
         prefs.edit().putString("orientation_setting", targetSetting.id).apply()
 
+        val isSysPortrait = appContext.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT ||
+                lastRawWidth < lastRawHeight
         val targetPortrait = when (targetSetting) {
             ScreenOrientation.PORTRAIT -> true
             ScreenOrientation.LANDSCAPE -> false
-            ScreenOrientation.AUTO -> lastRawWidth < lastRawHeight
+            ScreenOrientation.AUTO -> isSysPortrait
         }
         applyOrientation(targetPortrait)
     }
 
-    fun onDetectedOrientationChanged(isPortrait: Boolean) {
-        if (!WormholeIdentity.hasOrientationSensor(appContext, lastRawWidth, lastRawHeight)) return
-        if (_orientationSetting.value != ScreenOrientation.AUTO) return
-        if (_isPortrait.value == isPortrait) return
-        applyOrientation(isPortrait)
-    }
-
-    private fun applyOrientation(targetPortrait: Boolean) {
-        val orientationChanged = _isPortrait.value != targetPortrait
-        _isPortrait.value = targetPortrait
-        val newDisplay = computeDisplayInfo(lastRawWidth, lastRawHeight, lastFps, targetPortrait)
-        if (newDisplay != _displayInfo.value || orientationChanged) {
-            if (_isMirroring.value) {
-                disconnectClient("orientation_changed")
-            }
-            _displayInfo.value = newDisplay
-            if (isServerRunning()) {
-                restartServer()
-            }
-        }
-    }
-
-    fun updateDisplayMetrics(width: Int, height: Int, fps: Int) {
+    fun onConfigurationChanged(width: Int, height: Int, fps: Int, isPortrait: Boolean) {
         lastRawWidth = width
         lastRawHeight = height
         lastFps = fps
@@ -225,15 +206,21 @@ object WormholeServer {
         val targetPortrait = when (_orientationSetting.value) {
             ScreenOrientation.PORTRAIT -> true
             ScreenOrientation.LANDSCAPE -> false
-            ScreenOrientation.AUTO -> if (!autoSupported) false else width < height
+            ScreenOrientation.AUTO -> if (!autoSupported) false else isPortrait
         }
+        applyOrientation(targetPortrait)
+    }
+
+    private fun applyOrientation(targetPortrait: Boolean) {
+        val orientationChanged = _isPortrait.value != targetPortrait
         _isPortrait.value = targetPortrait
-        val computed = computeDisplayInfo(width, height, fps, targetPortrait)
-        if (computed != _displayInfo.value) {
+        val newDisplay = computeDisplayInfo(lastRawWidth, lastRawHeight, lastFps, targetPortrait)
+        val displayChanged = newDisplay != _displayInfo.value
+        if (displayChanged || orientationChanged) {
+            _displayInfo.value = newDisplay
             if (_isMirroring.value) {
-                disconnectClient("display_metrics_changed")
+                Log.i(TAG, "Disconnecting client: orientation_changed (${if (targetPortrait) "portrait" else "landscape"})")
             }
-            _displayInfo.value = computed
             if (isServerRunning()) {
                 restartServer()
             }
@@ -266,6 +253,7 @@ object WormholeServer {
                     currentDisplay.width, currentDisplay.height, currentDisplay.refreshRate
                 ) else null
                 Log.i(TAG, "HEVC requested=$requestHevc hardware=${renderer.hevcDecoder}")
+                Log.i(TAG, "Starting receiver advertising ${currentDisplay.width}x${currentDisplay.height}@${currentDisplay.refreshRate}Hz (portrait=${_isPortrait.value}, setting=${_orientationSetting.value})")
                 val port = NativeBridge.nativeStart(
                     keyFile, identity.deviceIdHex, identity.serviceName,
                     currentDisplay.width, currentDisplay.height, currentDisplay.refreshRate,
@@ -435,10 +423,12 @@ object WormholeServer {
         lastFps = fps
 
         val autoSupported = WormholeIdentity.hasOrientationSensor(context, lastRawWidth, lastRawHeight)
+        val isSysPortrait = context.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT ||
+                lastRawWidth < lastRawHeight
         val targetPortrait = when (_orientationSetting.value) {
             ScreenOrientation.PORTRAIT -> true
             ScreenOrientation.LANDSCAPE -> false
-            ScreenOrientation.AUTO -> if (!autoSupported) false else lastRawWidth < lastRawHeight
+            ScreenOrientation.AUTO -> if (!autoSupported) false else isSysPortrait
         }
         _isPortrait.value = targetPortrait
         return computeDisplayInfo(lastRawWidth, lastRawHeight, lastFps, targetPortrait)
