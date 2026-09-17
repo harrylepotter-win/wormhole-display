@@ -5,9 +5,11 @@ import android.content.Context
 data class ConnectionEntry(
     val clientName: String,
     val timestamp: Long,
-    val durationSeconds: Long
+    val durationSeconds: Long,
+    val resolution: String = "",
+    val codec: String = ""
 ) {
-    fun serialize(): String = "$timestamp|$durationSeconds|${escape(clientName)}"
+    fun serialize(): String = "$timestamp|$durationSeconds|${escape(clientName)}|${escape(resolution)}|${escape(codec)}"
 
     companion object {
         private fun escape(s: String): String =
@@ -17,12 +19,14 @@ data class ConnectionEntry(
             s.replace("%7C", "|").replace("%0A", "\n").replace("%25", "%")
 
         fun deserialize(str: String): ConnectionEntry? {
-            val parts = str.split("|", limit = 3)
-            if (parts.size != 3) return null
+            val parts = str.split("|", limit = 5)
+            if (parts.size < 3) return null
             val ts = parts[0].toLongOrNull() ?: return null
             val dur = parts[1].toLongOrNull() ?: return null
             val name = unescape(parts[2])
-            return ConnectionEntry(name, ts, dur)
+            val res = if (parts.size >= 4) unescape(parts[3]) else ""
+            val codec = if (parts.size >= 5) unescape(parts[4]) else ""
+            return ConnectionEntry(name, ts, dur, res, codec)
         }
     }
 }
@@ -38,9 +42,15 @@ class ConnectionHistory(context: Context) {
             .take(limit)
     }
 
-    fun recordConnection(clientName: String, timestamp: Long, durationSeconds: Long) {
+    fun recordConnection(
+        clientName: String,
+        timestamp: Long,
+        durationSeconds: Long,
+        resolution: String = "",
+        codec: String = ""
+    ) {
         val current = getRecent().toMutableList()
-        current.add(0, ConnectionEntry(clientName, timestamp, durationSeconds))
+        current.add(0, ConnectionEntry(clientName, timestamp, durationSeconds, resolution, codec))
         val trimmed = current.take(5)
         val serialized = trimmed.joinToString("\n") { it.serialize() }
         prefs.edit().putString(KEY_HISTORY, serialized).apply()

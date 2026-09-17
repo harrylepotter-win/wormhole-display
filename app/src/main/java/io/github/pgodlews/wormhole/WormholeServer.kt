@@ -56,6 +56,20 @@ object WormholeServer {
     private val _isPortrait = MutableStateFlow(false)
     val isPortrait: StateFlow<Boolean> = _isPortrait.asStateFlow()
 
+    data class OrientationNotice(
+        val isPortrait: Boolean,
+        val width: Int,
+        val height: Int,
+        val timestamp: Long = System.currentTimeMillis()
+    )
+
+    private val _orientationNotice = MutableStateFlow<OrientationNotice?>(null)
+    val orientationNotice: StateFlow<OrientationNotice?> = _orientationNotice.asStateFlow()
+
+    fun dismissOrientationNotice() {
+        _orientationNotice.value = null
+    }
+
     private var lastRawWidth = 1920
     private var lastRawHeight = 1080
     private var lastFps = 60
@@ -72,6 +86,11 @@ object WormholeServer {
     var startOnBoot: Boolean = true
         private set
 
+    private var sessionStartTime = 0L
+    private var sessionClientName: String? = null
+    private var sessionResolution: String = ""
+    private var sessionCodec: String = ""
+
     // Renderers
     val renderer = VideoRenderer(
         reconnectRequired = { requestReconnect() },
@@ -81,6 +100,9 @@ object WormholeServer {
         },
         onVideoSizeChanged = { w, h ->
             _videoAspectRatio.value = if (w > 0 && h > 0) w.toFloat() / h.toFloat() else null
+            if (w > 0 && h > 0) {
+                sessionResolution = "$w × $h"
+            }
         }
     )
     val audioRenderer = AudioRenderer(renderer.telemetry)
@@ -100,9 +122,6 @@ object WormholeServer {
     private val callbacksEnabled = AtomicBoolean(false)
     private val callbackGeneration = AtomicLong()
     private val mirrorGeneration = AtomicLong()
-
-    private var sessionStartTime = 0L
-    private var sessionClientName: String? = null
 
     val idleStatus: String
         get() = "Visible in Screen Mirroring as “${identity.serviceName}”"
@@ -220,6 +239,7 @@ object WormholeServer {
             _displayInfo.value = newDisplay
             if (_isMirroring.value) {
                 Log.i(TAG, "Disconnecting client: orientation_changed (${if (targetPortrait) "portrait" else "landscape"})")
+                _orientationNotice.value = OrientationNotice(targetPortrait, newDisplay.width, newDisplay.height)
             }
             if (isServerRunning()) {
                 restartServer()
@@ -337,15 +357,20 @@ object WormholeServer {
         if (sessionStartTime > 0L) {
             val duration = (System.currentTimeMillis() - sessionStartTime) / 1000
             val name = sessionClientName ?: _clientName.value ?: "Unknown device"
-            history.recordConnection(name, sessionStartTime, duration)
+            val res = sessionResolution.ifBlank { "${_displayInfo.value.width} × ${_displayInfo.value.height}" }
+            val codec = sessionCodec.ifBlank { "H.264" }
+            history.recordConnection(name, sessionStartTime, duration, res, codec)
             _recentConnections.value = history.getRecent()
             sessionStartTime = 0L
             sessionClientName = null
+            sessionResolution = ""
+            sessionCodec = ""
         }
     }
 
     private val listener = object : NativeBridge.Listener {
         override fun onVideoFrame(data: ByteArray, ingressNanos: Long, ntpLocalNanos: Long, ntpRemoteNanos: Long, hevc: Boolean) {
+            sessionCodec = if (hevc) "H.265" else "H.264"
             if (callbacksEnabled.get()) renderer.onFrame(data, ingressNanos, ntpLocalNanos, ntpRemoteNanos, hevc)
         }
 
@@ -377,6 +402,9 @@ object WormholeServer {
             if (!callbacksEnabled.get()) return
             if (running) {
                 sessionStartTime = System.currentTimeMillis()
+                sessionResolution = ""
+                sessionCodec = ""
+                dismissOrientationNotice()
                 renderer.beginSession()
                 audioRenderer.beginSession()
             } else {

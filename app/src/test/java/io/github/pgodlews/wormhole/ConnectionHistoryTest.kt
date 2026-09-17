@@ -6,11 +6,13 @@ import org.junit.Test
 class ConnectionHistoryTest {
 
     @Test
-    fun `serialization and deserialization preserves data including special characters`() {
+    fun `serialization and deserialization preserves data including special characters, resolution and codec`() {
         val original = ConnectionEntry(
             clientName = "Piotr’s iPhone (iPhone16,2) | special % symbols\nnewline",
             timestamp = 1789245957000L,
-            durationSeconds = 125L
+            durationSeconds = 125L,
+            resolution = "1920 × 1080",
+            codec = "H.264"
         )
         val serialized = original.serialize()
         val deserialized = ConnectionEntry.deserialize(serialized)
@@ -19,6 +21,21 @@ class ConnectionHistoryTest {
         assertEquals(original.clientName, deserialized!!.clientName)
         assertEquals(original.timestamp, deserialized.timestamp)
         assertEquals(original.durationSeconds, deserialized.durationSeconds)
+        assertEquals(original.resolution, deserialized.resolution)
+        assertEquals(original.codec, deserialized.codec)
+    }
+
+    @Test
+    fun `deserialization handles legacy 3-part format without resolution and codec`() {
+        val legacy = "1789245957000|125|Piotr’s MacBook Pro"
+        val deserialized = ConnectionEntry.deserialize(legacy)
+
+        assertNotNull(deserialized)
+        assertEquals("Piotr’s MacBook Pro", deserialized!!.clientName)
+        assertEquals(1789245957000L, deserialized.timestamp)
+        assertEquals(125L, deserialized.durationSeconds)
+        assertEquals("", deserialized.resolution)
+        assertEquals("", deserialized.codec)
     }
 
     @Test

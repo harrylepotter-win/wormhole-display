@@ -45,6 +45,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.delay
 
 data class DisplayInfo(
     val width: Int,
@@ -170,6 +171,7 @@ class MainActivity : ComponentActivity() {
             val recentConnections by WormholeServer.recentConnections.collectAsState()
             val displayInfo by WormholeServer.displayInfo.collectAsState()
             val orientationSetting by WormholeServer.orientationSetting.collectAsState()
+            val orientationNotice by WormholeServer.orientationNotice.collectAsState()
 
             LaunchedEffect(orientationSetting) {
                 updateOrientationMode(orientationSetting)
@@ -275,6 +277,13 @@ class MainActivity : ComponentActivity() {
                             orientationSetting = orientationSetting,
                             onOrientationSettingChanged = { WormholeServer.setOrientationSetting(it) }
                         )
+
+                        orientationNotice?.let { notice ->
+                            OrientationNoticeDialog(
+                                notice = notice,
+                                onDismiss = { WormholeServer.dismissOrientationNotice() }
+                            )
+                        }
                     }
                 }
             }
@@ -1147,9 +1156,14 @@ private fun DashboardScreen(
                                             fontWeight = FontWeight.SemiBold,
                                             color = Color(0xFFF1F5F9)
                                         )
-                                        Spacer(modifier = Modifier.height(1.dp))
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        val details = buildList {
+                                            add(ConnectionHistory.formatTimestamp(entry.timestamp))
+                                            if (entry.resolution.isNotBlank()) add(entry.resolution)
+                                            if (entry.codec.isNotBlank()) add(entry.codec)
+                                        }.joinToString(" • ")
                                         Text(
-                                            text = ConnectionHistory.formatTimestamp(entry.timestamp),
+                                            text = details,
                                             fontSize = if (isTvOrCompact) 10.sp else 13.sp,
                                             color = Color(0xFF94A3B8)
                                         )
@@ -1446,3 +1460,73 @@ private fun TelemetryOverlay(
         }
     }
 }
+
+@Composable
+private fun OrientationNoticeDialog(
+    notice: WormholeServer.OrientationNotice,
+    onDismiss: () -> Unit
+) {
+    var remainingSeconds by remember(notice.timestamp) { mutableStateOf(30) }
+
+    LaunchedEffect(notice.timestamp) {
+        remainingSeconds = 30
+        while (remainingSeconds > 0) {
+            delay(1000L)
+            remainingSeconds--
+        }
+        onDismiss()
+    }
+
+    val mode = if (notice.isPortrait) "Portrait" else "Landscape"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF142131),
+        shape = RoundedCornerShape(16.dp),
+        title = {
+            Text(
+                text = "Display Rotated",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFF1F5F9)
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Display orientation changed to $mode (${notice.width} × ${notice.height}).",
+                    fontSize = 14.sp,
+                    color = Color(0xFFF1F5F9),
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "AirPlay streaming was disconnected because Apple devices do not adapt to geometry changes mid-stream. Reconnect from Screen Mirroring on your Mac or iPhone to resume.",
+                    fontSize = 13.sp,
+                    color = Color(0xFF94A3B8),
+                    lineHeight = 18.sp
+                )
+            }
+        },
+        confirmButton = {
+            val okInteraction = remember { MutableInteractionSource() }
+            val isOkFocused by okInteraction.collectIsFocusedAsState()
+            Button(
+                onClick = onDismiss,
+                interactionSource = okInteraction,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isOkFocused) Color(0xFF9EFFEB) else Color(0xFF7DE2CE),
+                    contentColor = Color(0xFF09121E)
+                ),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.border(
+                    if (isOkFocused) 2.dp else 0.dp,
+                    Color.White,
+                    RoundedCornerShape(10.dp)
+                )
+            ) {
+                Text("OK (${remainingSeconds}s)", fontWeight = FontWeight.SemiBold)
+            }
+        }
+    )
+}
+
