@@ -115,6 +115,8 @@ show the title, artist, album and cover art.
 It uses Home Assistant's REST API over your local network — no add-on or MQTT
 broker required.
 
+<p align="center"><img src="docs/images/ha-now-playing.jpg" width="720" alt="Now-playing on a Portal Home Assistant dashboard (WallPanel screensaver)"/><br/><em>Now-playing surfaced on a Portal used as a Home Assistant wall panel</em></p>
+
 1. In Home Assistant, open your **profile** (bottom of the sidebar) and, under
    *Long-Lived Access Tokens*, **Create Token**. Copy it.
 2. In Wormhole Display, open **Settings → Home Assistant**, turn it **On**, and enter:
